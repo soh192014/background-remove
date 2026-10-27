@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>背景删除工具 · Background Remover</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:#172033;background:#f4f7fb}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;padding:28px 16px;background:radial-gradient(circle at top left,#e3efff,transparent 38%),#f5f7fb}
+.app{width:min(1000px,100%);margin:auto;background:#fff;border:1px solid #e7ebf2;border-radius:24px;padding:clamp(18px,4vw,34px);box-shadow:0 18px 55px #23395b14}
+header{text-align:center;margin-bottom:24px}
+.badge{display:inline-block;padding:6px 12px;border-radius:999px;background:#eaf2ff;color:#245ac2;font-size:13px;font-weight:700}
+h1{margin:12px 0 8px;font-size:clamp(27px,4vw,38px)}
+.subtitle{margin:0;color:#697386;line-height:1.7}
+.toolbar{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:22px 0}
+button,.upload{border:0;border-radius:12px;padding:12px 17px;font-size:15px;font-weight:650;cursor:pointer;transition:.18s}
+button:hover,.upload:hover{transform:translateY(-1px);filter:brightness(.97)}
+.primary{background:#245fe5;color:white}.secondary{background:#eef2f8;color:#263247}.upload{background:#172033;color:white;display:inline-flex;align-items:center;gap:8px}
+input[type=file]{display:none}
+.options{display:flex;gap:18px;justify-content:center;flex-wrap:wrap;padding:16px;background:#f7f9fc;border-radius:16px;margin-bottom:20px}
+.option{display:flex;align-items:center;gap:9px;flex-wrap:wrap;color:#485366;font-size:14px}
+input[type=range]{width:150px;accent-color:#245fe5}
+input[type=color]{width:32px;height:30px;border:0;padding:0;background:transparent;cursor:pointer}
+.workspace{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.panel{min-width:0;border:1px solid #e6eaf1;border-radius:18px;overflow:hidden}
+.panel h2{font-size:15px;margin:0;padding:13px 16px;background:#fafbfe;border-bottom:1px solid #e6eaf1}
+.preview{min-height:300px;padding:14px;display:flex;align-items:center;justify-content:center;background-color:#f0f3f8;background-image:linear-gradient(45deg,#e2e6ee 25%,transparent 25%),linear-gradient(-45deg,#e2e6ee 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e2e6ee 75%),linear-gradient(-45deg,transparent 75%,#e2e6ee 75%);background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0}
+.preview.solid{background-image:none}
+canvas{display:block;max-width:100%;max-height:520px;width:auto;height:auto;object-fit:contain}
+.empty{color:#778196;text-align:center;line-height:1.7;padding:28px}
+.status{text-align:center;min-height:24px;margin:16px 0 0;color:#596579;font-size:14px}
+.note{margin-top:18px;padding:14px 16px;border-radius:14px;background:#fff8e8;color:#77551b;font-size:13px;line-height:1.7}
+footer{text-align:center;color:#8a93a3;font-size:12px;margin-top:18px}
+@media(max-width:680px){.workspace{grid-template-columns:1fr}.preview{min-height:230px}.options{justify-content:flex-start}.option{width:100%;justify-content:space-between}}
+</style>
+</head>
+<body>
+<main class="app">
+<header>
+  <span class="badge">✨ 纯 HTML · 无需安装</span>
+  <h1>背景删除工具</h1>
+  <p class="subtitle">上传图片，尝试删除接近白色的背景，并下载透明 PNG。<br>图片在你的浏览器本地处理，不会自动上传。</p>
+</header>
+
+<div class="toolbar">
+  <label class="upload">📷 上传图片<input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label>
+  <button class="primary" id="downloadBtn">⬇️ 下载透明 PNG</button>
+  <button class="secondary" id="resetBtn">↩️ 重置</button>
+</div>
+
+<section class="options" aria-label="设置">
+  <label class="option">去白阈值 <input id="threshold" type="range" min="180" max="255" value="242"><span id="thresholdText">242</span></label>
+  <label class="option">边缘柔化 <input id="softness" type="range" min="0" max="60" value="20"><span id="softnessText">20</span></label>
+  <label class="option">预览背景 <input id="bgColor" type="color" value="#ffffff"><span>只影响预览</span></label>
+</section>
+
+<section class="workspace">
+  <div class="panel">
+    <h2>原图</h2>
+    <div class="preview" id="originalPreview"><div class="empty">📂<br>请先上传一张图片</div></div>
+  </div>
+  <div class="panel">
+    <h2>去背景预览（棋盘格代表透明区域）</h2>
+    <div class="preview" id="resultPreview"><div class="empty">处理结果会显示在这里</div></div>
+  </div>
+</section>
+<p class="status" id="status" role="status">等待上传图片。</p>
+<div class="note">💡 <strong>小提示：</strong>这个纯 HTML 版本通过颜色判断去除接近白色的背景，不是 AI 语义抠图。复杂背景、头发边缘或主体上的白色部分可能处理不准确。想删除草地、房间等复杂背景，需要接入 AI 背景分割模型或在线服务。</div>
+<footer>Background Remover · 本地浏览器处理</footer>
+</main>
+<script>
+const fileInput = document.getElementById('fileInput');
+const threshold = document.getElementById('threshold');
+const softness = document.getElementById('softness');
+const thresholdText = document.getElementById('thresholdText');
+const softnessText = document.getElementById('softnessText');
+const originalPreview = document.getElementById('originalPreview');
+const resultPreview = document.getElementById('resultPreview');
+const statusEl = document.getElementById('status');
+const bgColor = document.getElementById('bgColor');
+let sourceImage = null;
+let sourceURL = null;
+let outputCanvas = null;
+
+function makeCanvasPreview(container, canvas) {
+  container.replaceChildren();
+  container.classList.remove('solid');
+  const copy = document.createElement('canvas');
+  copy.width = canvas.width;
+  copy.height = canvas.height;
+  copy.getContext('2d').drawImage(canvas, 0, 0);
+  container.appendChild(copy);
+}
+function renderOriginal() {
+  if (!sourceImage) return;
+  const c = document.createElement('canvas');
+  c.width = sourceImage.naturalWidth; c.height = sourceImage.naturalHeight;
+  c.getContext('2d').drawImage(sourceImage, 0, 0);
+  makeCanvasPreview(originalPreview, c);
+}
+function processImage() {
+  if (!sourceImage) return;
+  const c = document.createElement('canvas');
+  c.width = sourceImage.naturalWidth; c.height = sourceImage.naturalHeight;
+  const ctx = c.getContext('2d', {willReadFrequently:true});
+  ctx.drawImage(sourceImage, 0, 0);
+  const imageData = ctx.getImageData(0, 0, c.width, c.height);
+  const data = imageData.data;
+  const t = Number(threshold.value);
+  const s = Number(softness.value);
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i], g = data[i+1], b = data[i+2];
+    // Only pixels that are bright and nearly neutral are considered white background.
+    const min = Math.min(r,g,b), max = Math.max(r,g,b);
+    const brightness = (r+g+b)/3;
+    const neutral = max-min;
+    if (brightness >= t && neutral <= Math.max(18, 255-t+10)) {
+      data[i+3] = 0;
+    } else if (s > 0 && brightness > t-s && neutral <= 28) {
+      const factor = Math.max(0, Math.min(1, (t-brightness)/s));
+      data[i+3] = Math.round(data[i+3] * factor);
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+  outputCanvas = c;
+  makeCanvasPreview(resultPreview, c);
+  statusEl.textContent = `处理完成：${c.width} × ${c.height} 像素。你可以调整阈值或边缘柔化。`;
+}
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) return;
+  if (sourceURL) URL.revokeObjectURL(sourceURL);
+  sourceURL = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    sourceImage = img;
+    renderOriginal();
+    processImage();
+    URL.revokeObjectURL(sourceURL);
+    sourceURL = null;
+  };
+  img.onerror = () => { statusEl.textContent = '无法读取这张图片，请换一张图片试试。'; };
+  img.src = sourceURL;
+});
+threshold.addEventListener('input', () => { thresholdText.textContent = threshold.value; processImage(); });
+softness.addEventListener('input', () => { softnessText.textContent = softness.value; processImage(); });
+bgColor.addEventListener('input', () => {
+  resultPreview.classList.add('solid');
+  resultPreview.style.backgroundColor = bgColor.value;
+});
+document.getElementById('downloadBtn').addEventListener('click', () => {
+  if (!outputCanvas) { alert('请先上传图片！'); return; }
+  outputCanvas.toBlob(blob => {
+    if (!blob) { statusEl.textContent = '下载失败，请重新尝试。'; return; }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'background-removed.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, 'image/png');
+});
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (sourceURL) URL.revokeObjectURL(sourceURL);
+  sourceImage = null; sourceURL = null; outputCanvas = null; fileInput.value = '';
+  threshold.value = 242; softness.value = 20;
+  thresholdText.textContent = '242'; softnessText.textContent = '20';
+  originalPreview.classList.remove('solid'); resultPreview.classList.remove('solid');
+  originalPreview.style.backgroundColor = ''; resultPreview.style.backgroundColor = '';
+  originalPreview.innerHTML = '<div class="empty">📂<br>请先上传一张图片</div>';
+  resultPreview.innerHTML = '<div class="empty">处理结果会显示在这里</div>';
+  statusEl.textContent = '等待上传图片。';
+});
+</script>
+</body>
+</html>
